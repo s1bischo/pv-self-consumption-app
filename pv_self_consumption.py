@@ -1,3 +1,5 @@
+import io
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -13,14 +15,80 @@ PV_PATH = SOURCE_DIR / "pv_01012025-31122025.csv"
 pio.templates[pio.templates.default].layout.separators = ".'"
 
 
+def _read_text(src) -> str:
+    """Roh-Text aus Pfad oder hochgeladenem File-Objekt lesen.
+
+    Probiert mehrere Kodierungen, weil der Original-Export je nach Quelle
+    UTF-8 (mit BOM) oder Windows-1252/Latin-1 (Umlaute) sein kann.
+    """
+    if hasattr(src, "getvalue"):       # st.file_uploader -> UploadedFile
+        data = src.getvalue()
+    elif hasattr(src, "read"):
+        data = src.read()
+    else:
+        data = Path(src).read_bytes()
+    if isinstance(data, str):
+        return data
+    for enc in ("utf-8-sig", "cp1252", "latin-1"):
+        try:
+            return data.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", errors="replace")
+
+
+def _canon(col: str) -> str:
+    """Spaltenname vereinheitlichen: Einheit [..] weg, Umlaut, Mehrfach-Spaces, lower."""
+    col = re.sub(r"\[.*?\]", "", col)                 # Einheit '[kW]' entfernen
+    col = col.replace("ü", "ue").replace("Ü", "Ue")
+    return re.sub(r"\s+", " ", col).strip().lower()
+
+
+# Kanonische Zielspalten je normalisiertem Quellnamen / Schlüsselwort.
+_LASTGANG_HEADER_KEYS = ("zeitraum von", "timefrom")
+
+
+def _normalize_lastgang(df: pd.DataFrame) -> pd.DataFrame:
+    """Original- und bereits umbenannte Spaltennamen auf das Zielschema mappen."""
+    rename: dict[str, str] = {}
+    for col in df.columns:
+        c = _canon(str(col))
+        if c in ("zeitraum von", "timefrom"):
+            rename[col] = "timeFrom"
+        elif c in ("zeitraum bis", "timeto"):
+            rename[col] = "timeTo"
+        elif "bezug" in c and "wirkenergie" in c:
+            rename[col] = "Bezug-Wirkenergie"
+        elif "ruecklieferung" in c and "wirkenergie" in c:
+            rename[col] = "Ruecklieferung-Wirkenergie"
+    return df.rename(columns=rename)
+
+
 @st.cache_data
 def parse_lastgang(src) -> pd.DataFrame:
     """Lastgang-CSV (Viertelstundenwerte) auf Tagessummen aggregieren.
 
+    Akzeptiert das Original-Exportformat (Header 'Zeitraum von;...;Bezug
+    Wirkenergie [kW];...' mit optionalem Metadaten-Vorspann und Umlauten)
+    ebenso wie die vereinfachte Variante (timeFrom;...;Bezug-Wirkenergie;...).
     src ist ein Pfad (Demo-Daten) oder ein hochgeladenes File-Objekt (im RAM).
-    Erwartete Spalten: timeFrom, Bezug-Wirkenergie, Ruecklieferung-Wirkenergie.
     """
-    df = pd.read_csv(src, sep=";", decimal=".")
+    lines = _read_text(src).splitlines()
+
+    # Header-Zeile suchen -> evtl. vorangestellte Metadaten-Zeilen überspringen.
+    header_row = next(
+        (i for i, line in enumerate(lines)
+         if _canon(line.split(";")[0]) in _LASTGANG_HEADER_KEYS),
+        None,
+    )
+    if header_row is None:
+        raise ValueError(
+            "Header nicht gefunden – erwarte eine Zeile mit 'Zeitraum von' bzw. 'timeFrom'."
+        )
+
+    df = pd.read_csv(io.StringIO("\n".join(lines[header_row:])), sep=";", decimal=".")
+    df = _normalize_lastgang(df)
+
     required = {"timeFrom", "Bezug-Wirkenergie", "Ruecklieferung-Wirkenergie"}
     missing = required - set(df.columns)
     if missing:
