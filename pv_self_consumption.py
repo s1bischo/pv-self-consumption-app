@@ -49,7 +49,7 @@ def plot_daily(daily: pd.DataFrame, pv: pd.DataFrame) -> go.Figure:
         mode="lines+markers", name="PV Produktion", line=dict(color="green"),
     ))
     fig.update_layout(
-        title="Lastgang 2025 - Tageswerte",
+        title="Lastgang - Tageswerte",
         xaxis_title="Datum",
         yaxis_title="Energie [kWh/Tag]",
         hovermode="x unified",
@@ -57,12 +57,12 @@ def plot_daily(daily: pd.DataFrame, pv: pd.DataFrame) -> go.Figure:
     return fig
 
 
-st.set_page_config(page_title="PV Eigenverbrauch 2025", layout="wide")
-st.title("PV Eigenverbrauch 2025")
+st.set_page_config(page_title="PV Eigenverbrauch", layout="wide")
+st.title("PV Eigenverbrauch")
 
 daily, pv = load_data()
 
-# Kennzahlen 2025
+# Kennzahlen
 sum_feed_in = round(daily["Ruecklieferung_kWh"].sum(), 1)
 sum_consumption_from_grid = round(daily["Bezug_kWh"].sum(), 1)
 pv_production = round(pv["Total system [kWh]"].sum(), 1)
@@ -74,5 +74,5 @@ col2.metric("Netzbezug", f"{sum_consumption_from_grid:,.0f} kWh".replace(",", "'
 col3.metric("Einspeisung", f"{sum_feed_in:,.0f} kWh".replace(",", "'"))
 col4.metric("Eigenverbrauch", f"{self_consumption / pv_production * 100:.1f} %")
 
-st.subheader("Lastgang 2025 - Tageswerte")
+st.subheader("Lastgang - Tageswerte")
 st.plotly_chart(plot_daily(daily, pv), use_container_width=True)
