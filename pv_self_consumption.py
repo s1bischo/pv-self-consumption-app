@@ -94,7 +94,12 @@ def parse_lastgang(src) -> pd.DataFrame:
     if missing:
         raise ValueError(f"Lastgang-CSV: fehlende Spalten {sorted(missing)}")
 
-    df["timeFrom"] = pd.to_datetime(df["timeFrom"], format="%d.%m.%Y %H:%M")
+    # Footer-Zeilen (z. B. 'Minimalwert;;…', 'Mittelwert', 'Maximalwert') und
+    # sonstige Fremdzeilen verwerfen: was kein gültiges Datum ergibt, fliegt raus.
+    df["timeFrom"] = pd.to_datetime(df["timeFrom"], format="%d.%m.%Y %H:%M", errors="coerce")
+    df = df.dropna(subset=["timeFrom"]).copy()
+    for col in ("Bezug-Wirkenergie", "Ruecklieferung-Wirkenergie"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # Tagessummen: kW × 0.25 h pro Viertelstunden-Intervall = kWh
     daily = (
