@@ -5,3 +5,5 @@ PV self consumption analysation app
 streamlit run pv_self_consumption.py
 ```
 
+Public access:
+https://pv-self-consumption.streamlit.app
